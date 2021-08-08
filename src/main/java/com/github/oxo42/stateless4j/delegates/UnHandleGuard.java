@@ -15,7 +15,7 @@ public interface UnHandleGuard<S, T, C> {
     /**
      * Performs this operation on the given input
      *
-     * @param selectorCondition Input argument
+     * @param condition Input argument
      */
-    void doIt(SelectorCondition<S, T, C> selectorCondition);
+    void doIt(SelectorCondition<S, T, C> condition);
 }

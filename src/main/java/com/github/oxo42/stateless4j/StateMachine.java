@@ -4,7 +4,6 @@ import com.github.oxo42.stateless4j.delegates.Trace;
 import com.github.oxo42.stateless4j.delegates.UnHandleGuard;
 import com.github.oxo42.stateless4j.transitions.SelectorCondition;
 import com.github.oxo42.stateless4j.transitions.Transition;
-import com.github.oxo42.stateless4j.triggers.Event;
 import com.github.oxo42.stateless4j.triggers.TriggerBehaviour;
 
 import java.util.ArrayList;
@@ -122,7 +121,7 @@ public class StateMachine<S, T, C> {
 
     StateRepresentation<S, T, C> getCurrentRepresentation() {
         StateRepresentation<S, T, C> representation = config.getRepresentation(getState());
-        return representation == null ? new StateRepresentation<S, T, C>(getState()) : representation;
+        return representation == null ? new StateRepresentation<>(getState()) : representation;
     }
 
     /**
@@ -143,24 +142,19 @@ public class StateMachine<S, T, C> {
      * Actions associated with leaving the current state and entering the new one
      * will be invoked.
      *
-     * @param event   The trigger to fire
+     * @param trigger The trigger to fire
      * @param context context
      */
-    public void fire(Event<T, C> event, C context) {
-        assert event != null : TRIGGER_IS_NULL;
+    public void fire(T trigger, C context) {
+        assert trigger != null : TRIGGER_IS_NULL;
         this.context = context;
-        publicFire(event.getTrigger(), context);
+        publicFire(trigger, context);
     }
 
     protected void publicFire(T trigger, C context) {
         isStarted = true;
         if (trace != null) {
             trace.trigger(trigger);
-        }
-
-        Event<T, C> configuration = config.getTriggerConfiguration(trigger);
-        if (configuration != null) {
-            configuration.validateParameters(context);
         }
 
         SelectorCondition<S, T, C> selectorCondition = new SelectorCondition<>(getState(), trigger, context);

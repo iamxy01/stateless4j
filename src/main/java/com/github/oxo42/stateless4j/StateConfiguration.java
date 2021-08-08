@@ -6,7 +6,6 @@ import com.github.oxo42.stateless4j.delegates.Selector;
 import com.github.oxo42.stateless4j.delegates.StateRepresentationSelector;
 import com.github.oxo42.stateless4j.transitions.TransitioningTriggerBehaviour;
 import com.github.oxo42.stateless4j.triggers.DynamicTriggerBehaviour;
-import com.github.oxo42.stateless4j.triggers.Event;
 import com.github.oxo42.stateless4j.triggers.InternalTriggerBehaviour;
 
 public class StateConfiguration<S, T, C> {
@@ -29,17 +28,6 @@ public class StateConfiguration<S, T, C> {
         assert lookup != null : "lookup is null";
         this.representation = representation;
         this.lookup = lookup;
-    }
-
-    StateConfiguration<S, T, C> publicPermit(Event<T, C> event, S toState, Action<S, T, C> action) {
-        return publicPermitIf(event, toState, NO_GUARD, action);
-    }
-
-    StateConfiguration<S, T, C> publicPermitIf(Event<T, C> event, S toState, Guard<S, T, C> guard, Action<S, T, C> action) {
-        assert action != null : ACTION_IS_NULL;
-        assert guard != null : GUARD_IS_NULL;
-        representation.addTriggerBehaviour(new TransitioningTriggerBehaviour<>(event.getTrigger(), toState, guard, action));
-        return this;
     }
 
     /**
@@ -301,12 +289,6 @@ public class StateConfiguration<S, T, C> {
         return this;
     }
 
-    public StateConfiguration<S, T, C> onEntryFrom(Event<T, C> event, final Action<S, T, C> entryAction) {
-        assert entryAction != null : ENTRY_ACTION_IS_NULL;
-        representation.addEntryAction(event.getTrigger(), entryAction);
-        return this;
-    }
-
     /**
      * Specify an action that will execute when transitioning from the configured state
      *
@@ -370,38 +352,6 @@ public class StateConfiguration<S, T, C> {
      * Accept the specified trigger and transition to the destination state, calculated dynamically by the supplied
      * function
      *
-     * @param event    The accepted trigger
-     * @param selector Function to calculate the state that the trigger will cause a transition to
-     * @return The receiver
-     */
-    public StateConfiguration<S, T, C> permitDynamic(Event<T, C> event, Selector<S, T, C> selector) {
-        return permitDynamicIf(event, selector, NO_GUARD);
-    }
-
-    /**
-     * Accept the specified trigger and transition to the destination state, calculated dynamically by the supplied
-     * function
-     * <p>
-     * Additionally a given action is performed when transitioning. This action will be called after
-     * the onExit action and before the onEntry action (of the re-entered state). The parameter of the
-     * trigger will be given to this action.
-     *
-     * @param event    The accepted trigger
-     * @param selector Function to calculate the state that the trigger will cause a transition to
-     * @param action   The action to be performed "during" transition
-     * @param <TArg0>  Type of the first trigger argument
-     * @return The receiver
-     */
-    public <TArg0> StateConfiguration<S, T, C> permitDynamic(Event<T, C> event,
-                                                             Selector<S, T, C> selector,
-                                                             Action<S, T, C> action) {
-        return permitDynamicIf(event, selector, NO_GUARD, action);
-    }
-
-    /**
-     * Accept the specified trigger and transition to the destination state, calculated dynamically by the supplied
-     * function
-     *
      * @param trigger  The accepted trigger
      * @param selector Function to calculate the state that the trigger will cause a transition to
      * @param guard    Function that must return true in order for the  trigger to be accepted
@@ -410,6 +360,7 @@ public class StateConfiguration<S, T, C> {
     public StateConfiguration<S, T, C> permitDynamicIf(T trigger,
                                                        final Selector<S, T, C> selector,
                                                        Guard<S, T, C> guard) {
+        assert trigger != null : TRIGGER_IS_NULL;
         assert selector != null : DESTINATION_STATE_SELECTOR_IS_NULL;
         return publicPermitDynamicIf(trigger, selector, guard, NO_ACTION);
     }
@@ -431,49 +382,9 @@ public class StateConfiguration<S, T, C> {
                                                        final Selector<S, T, C> selector,
                                                        Guard<S, T, C> guard,
                                                        final Action<S, T, C> action) {
+        assert trigger != null : TRIGGER_IS_NULL;
         assert selector != null : DESTINATION_STATE_SELECTOR_IS_NULL;
         return publicPermitDynamicIf(trigger, selector, guard, action);
-    }
-
-    /**
-     * Accept the specified trigger and transition to the destination state, calculated dynamically by the supplied
-     * function
-     *
-     * @param event    The accepted trigger
-     * @param selector Function to calculate the state that the trigger will cause a transition to
-     * @param guard    Function that must return true in order for the  trigger to be accepted
-     * @return The receiver
-     */
-    public StateConfiguration<S, T, C> permitDynamicIf(Event<T, C> event,
-                                                       final Selector<S, T, C> selector,
-                                                       Guard<S, T, C> guard) {
-        assert event != null : TRIGGER_IS_NULL;
-        assert selector != null : DESTINATION_STATE_SELECTOR_IS_NULL;
-        return publicPermitDynamicIf(event, selector, guard, NO_ACTION);
-    }
-
-    /**
-     * Accept the specified trigger and transition to the destination state, calculated dynamically by the supplied
-     * function
-     * <p>
-     * Additionally a given action is performed when transitioning. This action will be called after
-     * the onExit action of the current state and before the onEntry action of the destination state.
-     * The parameter of the trigger will be given to this action.
-     *
-     * @param event    The accepted trigger
-     * @param selector Function to calculate the state that the trigger will cause a transition to
-     * @param guard    Function that must return true in order for the  trigger to be accepted
-     * @param action   The action to be performed "during" transition
-     * @param <TArg0>  Type of the first trigger argument
-     * @return The receiver
-     */
-    public <TArg0> StateConfiguration<S, T, C> permitDynamicIf(Event<T, C> event,
-                                                               final Selector<S, T, C> selector,
-                                                               Guard<S, T, C> guard,
-                                                               final Action<S, T, C> action) {
-        assert event != null : TRIGGER_IS_NULL;
-        assert selector != null : DESTINATION_STATE_SELECTOR_IS_NULL;
-        return publicPermitDynamicIf(event, selector, guard, action);
     }
 
     void enforceNotIdentityTransition(S destination) {
@@ -516,16 +427,6 @@ public class StateConfiguration<S, T, C> {
         assert selector != null : DESTINATION_STATE_SELECTOR_IS_NULL;
         assert guard != null : GUARD_IS_NULL;
         representation.addTriggerBehaviour(new DynamicTriggerBehaviour<>(trigger, selector, guard, action));
-        return this;
-    }
-
-    StateConfiguration<S, T, C> publicPermitDynamicIf(Event<T, C> event,
-                                                      Selector<S, T, C> selector,
-                                                      Guard<S, T, C> guard,
-                                                      Action<S, T, C> action) {
-        assert selector != null : DESTINATION_STATE_SELECTOR_IS_NULL;
-        assert guard != null : GUARD_IS_NULL;
-        representation.addTriggerBehaviour(new DynamicTriggerBehaviour<>(event.getTrigger(), selector, guard, action));
         return this;
     }
 }
