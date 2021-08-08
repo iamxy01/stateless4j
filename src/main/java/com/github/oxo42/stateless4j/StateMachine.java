@@ -1,11 +1,16 @@
 package com.github.oxo42.stateless4j;
 
-import com.github.oxo42.stateless4j.delegates.*;
+import com.github.oxo42.stateless4j.delegates.Trace;
+import com.github.oxo42.stateless4j.delegates.UnHandleGuard;
+import com.github.oxo42.stateless4j.transitions.SelectorCondition;
 import com.github.oxo42.stateless4j.transitions.Transition;
-import com.github.oxo42.stateless4j.triggers.*;
+import com.github.oxo42.stateless4j.triggers.Event;
+import com.github.oxo42.stateless4j.triggers.TriggerBehaviour;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * Models behaviour as transitions between a finite set of states
@@ -13,61 +18,48 @@ import java.util.List;
  * @param <S> The type used to represent the states
  * @param <T> The type used to represent the triggers that cause state transitions
  */
-public class StateMachine<S, T> {
-    
+public class StateMachine<S, T, C> {
+
     private static final String TRIGGER_IS_NULL = "trigger is null";
-    protected final StateMachineConfig<S, T> config;
-    protected final Func<S> stateAccessor;
-    protected final Action1<S> stateMutator;
+    protected final StateMachineConfig<S, T, C> config;
+    protected final Supplier<S> stateAccessor;
+    protected final Consumer<S> stateMutator;
     private Trace<S, T> trace = null;
     private boolean isStarted = false;
     private S initialState;
-
-    protected Action3<S, T, Object[]> unhandledTriggerAction = new Action3<S, T, Object[]>() {
-        @Override
-        public void doIt(S state, T trigger, Object[] args) {
-            throw new IllegalStateException(
-                    String.format(
-                            "No valid leaving transitions are permitted from state '%s' for trigger '%s'. Consider ignoring the trigger.",
-                            state, trigger)
-            );
-        }
+    protected UnHandleGuard<S, T, C> unhandledTriggerAction = guardCondition -> {
+        throw new IllegalStateException(
+                String.format(
+                        "No valid leaving transitions are permitted from state '%s' for trigger '%s'. Consider ignoring the trigger.",
+                        guardCondition.getFrom(), guardCondition.getTrigger())
+        );
     };
-    
+    private C context;
+
     /**
      * Construct a state machine
      *
      * @param initialState The initial state
      */
     public StateMachine(S initialState) {
-        this(initialState, new StateMachineConfig<S, T>());
+        this(initialState, new StateMachineConfig<>());
     }
-    
+
     /**
      * Construct a state machine
      *
      * @param initialState The initial state
      * @param config       State machine configuration
      */
-    public StateMachine(S initialState, StateMachineConfig<S, T> config) {
+    public StateMachine(S initialState, StateMachineConfig<S, T, C> config) {
         this.initialState = initialState;
         this.config = config;
-        final StateReference<S, T> reference = new StateReference<>();
+        final StateReference<S> reference = new StateReference<>();
         reference.setState(initialState);
-        stateAccessor = new Func<S>() {
-            @Override
-            public S call() {
-                return reference.getState();
-            }
-        };
-        stateMutator = new Action1<S>() {
-            @Override
-            public void doIt(S s) {
-                reference.setState(s);
-            }
-        };
+        stateAccessor = reference::getState;
+        stateMutator = reference::setState;
     }
-    
+
     /**
      * Construct a state machine with external state storage.
      *
@@ -75,17 +67,17 @@ public class StateMachine<S, T> {
      * @param stateAccessor State accessor
      * @param stateMutator  State mutator
      */
-    public StateMachine(S initialState, Func<S> stateAccessor, Action1<S> stateMutator, StateMachineConfig<S, T> config) {
+    public StateMachine(S initialState, Supplier<S> stateAccessor, Consumer<S> stateMutator, StateMachineConfig<S, T, C> config) {
         this.config = config;
         this.stateAccessor = stateAccessor;
         this.stateMutator = stateMutator;
-        stateMutator.doIt(initialState);
+        stateMutator.accept(initialState);
     }
 
     /**
      * Fire initial transition into the initial state.
      * All super-states are entered too.
-     *
+     * <p>
      * This method can be called only once, before state machine is used.
      */
     public void fireInitialTransition() {
@@ -94,31 +86,31 @@ public class StateMachine<S, T> {
             throw new IllegalStateException("Firing initial transition after state machine has been started");
         }
         isStarted = true;
-        Transition<S, T> initialTransition = new Transition<>(null, currentState, null);
+        Transition<S, T, C> initialTransition = new Transition<>(null, currentState, null, context);
         getCurrentRepresentation().enter(initialTransition);
     }
 
-    public StateConfiguration<S, T> configure(S state) {
+    public StateConfiguration<S, T, C> configure(S state) {
         return config.configure(state);
     }
-    
-    public StateMachineConfig<S, T> configuration() {
+
+    public StateMachineConfig<S, T, C> configuration() {
         return config;
     }
-    
+
     /**
      * The current state
      *
      * @return The current state
      */
     public S getState() {
-        return stateAccessor.call();
+        return stateAccessor.get();
     }
-    
+
     private void setState(S value) {
-        stateMutator.doIt(value);
+        stateMutator.accept(value);
     }
-    
+
     /**
      * The currently-permissible trigger values
      *
@@ -127,12 +119,12 @@ public class StateMachine<S, T> {
     public List<T> getPermittedTriggers() {
         return getCurrentRepresentation().getPermittedTriggers();
     }
-    
-    StateRepresentation<S, T> getCurrentRepresentation() {
-        StateRepresentation<S, T> representation = config.getRepresentation(getState());
-        return representation == null ? new StateRepresentation<S, T>(getState()) : representation;
+
+    StateRepresentation<S, T, C> getCurrentRepresentation() {
+        StateRepresentation<S, T, C> representation = config.getRepresentation(getState());
+        return representation == null ? new StateRepresentation<S, T, C>(getState()) : representation;
     }
-    
+
     /**
      * Transition from the current state via the specified trigger.
      * The target state is determined by the configuration of the current state.
@@ -142,108 +134,61 @@ public class StateMachine<S, T> {
      * @param trigger The trigger to fire
      */
     public void fire(T trigger) {
-        publicFire(trigger);
+        publicFire(trigger, context);
     }
-    
+
     /**
      * Transition from the current state via the specified trigger.
      * The target state is determined by the configuration of the current state.
      * Actions associated with leaving the current state and entering the new one
      * will be invoked.
      *
-     * @param trigger The trigger to fire
-     * @param arg0    The first argument
-     * @param <TArg0> Type of the first trigger argument
+     * @param event   The trigger to fire
+     * @param context context
      */
-    public <TArg0> void fire(TriggerWithParameters1<TArg0, T> trigger, TArg0 arg0) {
-        assert trigger != null : TRIGGER_IS_NULL;
-        publicFire(trigger.getTrigger(), arg0);
+    public void fire(Event<T, C> event, C context) {
+        assert event != null : TRIGGER_IS_NULL;
+        this.context = context;
+        publicFire(event.getTrigger(), context);
     }
-    
-    /**
-     * Transition from the current state via the specified trigger.
-     * The target state is determined by the configuration of the current state.
-     * Actions associated with leaving the current state and entering the new one
-     * will be invoked.
-     *
-     * @param trigger The trigger to fire
-     * @param arg0    The first argument
-     * @param arg1    The second argument
-     * @param <TArg0> Type of the first trigger argument
-     * @param <TArg1> Type of the second trigger argument
-     */
-    public <TArg0, TArg1> void fire(TriggerWithParameters2<TArg0, TArg1, T> trigger, TArg0 arg0, TArg1 arg1) {
-        assert trigger != null : TRIGGER_IS_NULL;
-        publicFire(trigger.getTrigger(), arg0, arg1);
-    }
-    
-    /**
-     * Transition from the current state via the specified trigger.
-     * The target state is determined by the configuration of the current state.
-     * Actions associated with leaving the current state and entering the new one
-     * will be invoked.
-     *
-     * @param trigger The trigger to fire
-     * @param arg0    The first argument
-     * @param arg1    The second argument
-     * @param arg2    The third argument
-     * @param <TArg0> Type of the first trigger argument
-     * @param <TArg1> Type of the second trigger argument
-     * @param <TArg2> Type of the third trigger argument
-     */
-    public <TArg0, TArg1, TArg2> void fire(TriggerWithParameters3<TArg0, TArg1, TArg2, T> trigger, TArg0 arg0, TArg1 arg1, TArg2 arg2) {
-        assert trigger != null : TRIGGER_IS_NULL;
-        publicFire(trigger.getTrigger(), arg0, arg1, arg2);
-    }
-    
-    protected void publicFire(T trigger, Object... args) {
+
+    protected void publicFire(T trigger, C context) {
         isStarted = true;
         if (trace != null) {
             trace.trigger(trigger);
         }
-        TriggerWithParameters<T> configuration = config.getTriggerConfiguration(trigger);
+
+        Event<T, C> configuration = config.getTriggerConfiguration(trigger);
         if (configuration != null) {
-            configuration.validateParameters(args);
+            configuration.validateParameters(context);
         }
-        
-        TriggerBehaviour<S, T> triggerBehaviour = getCurrentRepresentation().tryFindHandler(trigger);
+
+        SelectorCondition<S, T, C> selectorCondition = new SelectorCondition<>(getState(), trigger, context);
+        TriggerBehaviour<S, T, C> triggerBehaviour = getCurrentRepresentation().tryFindHandler(trigger, selectorCondition);
         if (triggerBehaviour == null) {
-            unhandledTriggerAction.doIt(getCurrentRepresentation().getUnderlyingState(), trigger, args);
+            SelectorCondition<S, T, C> condition = new SelectorCondition<>(getCurrentRepresentation().getUnderlyingState(), trigger, context);
+            unhandledTriggerAction.doIt(condition);
             return;
         }
-        
+
+        S source = getState();
         if (triggerBehaviour.isInternal()) {
-            triggerBehaviour.performAction(args);
+            S destination = triggerBehaviour.transitionsTo(selectorCondition);
+            Transition<S, T, C> transition = new Transition<>(source, destination, trigger, context);
+            triggerBehaviour.performAction(transition);
         } else {
-            S source = getState();
-            S destination = triggerBehaviour.transitionsTo(source, args);
-            Transition<S, T> transition = new Transition<>(source, destination, trigger);
-            
+
+            S destination = triggerBehaviour.transitionsTo(selectorCondition);
+            Transition<S, T, C> transition = new Transition<>(source, destination, trigger, context);
+
             getCurrentRepresentation().exit(transition);
-            triggerBehaviour.performAction(args);
+            triggerBehaviour.performAction(transition);
             setState(destination);
-            getCurrentRepresentation().enter(transition, args);
+            getCurrentRepresentation().enter(transition);
             if (trace != null) {
                 trace.transition(trigger, source, destination);
             }
         }
-    }
-    
-    /**
-     * Override the default behaviour of throwing an exception when an unhandled trigger is fired
-     *
-     * @param unhandledTriggerAction An action to call when an unhandled trigger is fired
-     */
-    public void onUnhandledTrigger(final Action2<S, T> unhandledTriggerAction) {
-        if (unhandledTriggerAction == null) {
-            throw new IllegalStateException("unhandledTriggerAction");
-        }
-        this.unhandledTriggerAction = new Action3<S, T, Object[]>() {
-            @Override
-            public void doIt(S state, T trigger, Object[] arg3) {
-                unhandledTriggerAction.doIt(state, trigger);
-            }
-        };
     }
 
     /**
@@ -251,7 +196,7 @@ public class StateMachine<S, T> {
      *
      * @param unhandledTriggerAction An action to call with state, trigger and params when an unhandled trigger is fired
      */
-    public void onUnhandledTrigger(Action3<S, T, Object[]> unhandledTriggerAction) {
+    public void onUnhandledTrigger(UnHandleGuard<S, T, C> unhandledTriggerAction) {
         if (unhandledTriggerAction == null) {
             throw new IllegalStateException("unhandledTriggerAction");
         }
@@ -267,7 +212,7 @@ public class StateMachine<S, T> {
     public boolean isInState(S state) {
         return getCurrentRepresentation().isIncludedIn(state);
     }
-    
+
     /**
      * Returns true if {@code trigger} can be fired  in the current state
      *
@@ -275,7 +220,11 @@ public class StateMachine<S, T> {
      * @return True if the trigger can be fired, false otherwise
      */
     public boolean canFire(T trigger) {
-        return getCurrentRepresentation().canHandle(trigger);
+        return getCurrentRepresentation().canHandle(trigger, null);
+    }
+
+    public boolean canFire(T trigger, SelectorCondition<S, T, C> condition) {
+        return getCurrentRepresentation().canHandle(trigger, condition);
     }
 
     /**
@@ -297,11 +246,11 @@ public class StateMachine<S, T> {
     public String toString() {
         List<T> permittedTriggers = getPermittedTriggers();
         List<String> parameters = new ArrayList<>();
-        
+
         for (T tTrigger : permittedTriggers) {
             parameters.add(tTrigger.toString());
         }
-        
+
         StringBuilder params = new StringBuilder();
         String delim = "";
         for (String param : parameters) {
@@ -309,10 +258,14 @@ public class StateMachine<S, T> {
             params.append(param);
             delim = ", ";
         }
-        
+
         return String.format(
                 "StateMachine {{ State = %s, PermittedTriggers = {{ %s }}}}",
                 getState(),
                 params.toString());
+    }
+
+    public C getContext() {
+        return context;
     }
 }

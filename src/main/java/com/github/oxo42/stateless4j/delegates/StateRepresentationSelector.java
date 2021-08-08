@@ -1,21 +1,21 @@
 package com.github.oxo42.stateless4j.delegates;
 
+import com.github.oxo42.stateless4j.StateRepresentation;
+
 /**
  * Represents a function that accepts an input and produces a result
  *
  * @param <T1> Input argument type
- * @param <T2> Input argument type
  * @param <R>  Result type
  */
 @FunctionalInterface
-public interface Func3<T1, T2, R> {
+public interface StateRepresentationSelector<S, T, C> {
 
     /**
      * Applies this function to the given input
      *
-     * @param arg1 Input argument
-     * @param arg2 Input argument
+     * @param superState Input argument
      * @return Result
      */
-    R call(T1 arg1, T2 arg2);
+    StateRepresentation<S, T, C> call(S superState);
 }

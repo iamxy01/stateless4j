@@ -1,5 +1,7 @@
 package com.github.oxo42.stateless4j.delegates;
 
+import com.github.oxo42.stateless4j.transitions.SelectorCondition;
+
 /**
  * Represents a function that accepts an input and produces a result
  *
@@ -7,7 +9,7 @@ package com.github.oxo42.stateless4j.delegates;
  * @param <R>  Result type
  */
 @FunctionalInterface
-public interface Func2<T1, R> {
+public interface Selector<S, T, C> {
 
     /**
      * Applies this function to the given input
@@ -15,5 +17,5 @@ public interface Func2<T1, R> {
      * @param arg1 Input argument
      * @return Result
      */
-    R call(T1 arg1);
+    S call(SelectorCondition<S, T, C> condition);
 }

@@ -1,10 +1,11 @@
 package com.github.oxo42.stateless4j.transitions;
 
-public class Transition<S, T> {
+public class Transition<S, T, C> {
 
     private final S source;
     private final S destination;
     private final T trigger;
+    private final C context;
 
     /**
      * Construct a transition
@@ -13,10 +14,11 @@ public class Transition<S, T> {
      * @param destination The state transitioned to
      * @param trigger     The trigger that caused the transition
      */
-    public Transition(S source, S destination, T trigger) {
+    public Transition(S source, S destination, T trigger, C context) {
         this.source = source;
         this.destination = destination;
         this.trigger = trigger;
+        this.context = context;
     }
 
     /**
@@ -54,5 +56,9 @@ public class Transition<S, T> {
     public boolean isReentry() {
         final S source = getSource();
         return source != null && source.equals(getDestination());
+    }
+
+    public C getContext() {
+        return context;
     }
 }

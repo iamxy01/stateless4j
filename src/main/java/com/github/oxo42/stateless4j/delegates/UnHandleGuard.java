@@ -1,23 +1,21 @@
 package com.github.oxo42.stateless4j.delegates;
 
+import com.github.oxo42.stateless4j.transitions.SelectorCondition;
+
 /**
  * Represents an operation that accepts an input and returns no result
  *
  * @param <T>  The type of the input to the operation
  * @param <T1> The type of the input to the operation
  * @param <T2> The type of the input to the operation
- * @param <T3> The type of the input to the operation
  */
 @FunctionalInterface
-public interface Action4<T, T1, T2, T3> {
+public interface UnHandleGuard<S, T, C> {
 
     /**
      * Performs this operation on the given input
      *
-     * @param arg1 Input argument
-     * @param arg2 Input argument
-     * @param arg3 Input argument
-     * @param arg4 Input argument
+     * @param selectorCondition Input argument
      */
-    void doIt(T arg1, T1 arg2, T2 arg3, T3 arg4);
+    void doIt(SelectorCondition<S, T, C> selectorCondition);
 }
